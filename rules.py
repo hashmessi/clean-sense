@@ -6,6 +6,8 @@ exception inside validate() is a rejection (fail-closed).
 """
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Literal, Optional
@@ -42,6 +44,11 @@ MAX_ATTEMPTS = 3
 MAX_LLM_CALLS = 12
 RESIDUE_ABS_G = 0.5
 RESIDUE_FRAC = 0.03
+# Camera-estimated weight (ADR-003). A camera cannot meet the 0.5 g / 3 percent scale limits,
+# so vision mode has its own, looser, explicit limits. Estimates carry roughly +-20 to 40 percent error.
+VISION_RESIDUE_FRAC = 0.10       # estimated residue must fall to 10 percent of the start estimate
+VISION_FLOOR_G = 1.0             # below this the estimate is noise: counts as no measurable mess
+VISION_COVERAGE_MAX_PCT = 2.0    # and at most 2 percent of the tile may still look covered
 TEMP_LIMIT_C = 40.0  # BENCH PLACEHOLDER: set from the probe and a safe margin before any real use
 
 
@@ -164,6 +171,25 @@ def verify(start_g: float, end_g: float, camera_clean: bool, attempts_done: int)
         residue_limit = min(RESIDUE_ABS_G, RESIDUE_FRAC * start_g)
         scale_clean = end_g <= residue_limit
     if scale_clean and camera_clean:
+        return Verdict.DONE
+    if attempts_done >= MAX_ATTEMPTS:
+        return Verdict.HUMAN
+    return Verdict.RETRY
+
+
+def verify_vision(start_g: float, end_g: float, camera_clean: bool, attempts_done: int,
+                  coverage_pct: Optional[float]) -> Verdict:
+    """Camera-estimated weight (ADR-003). Estimate, coverage and the pixel check must all agree.
+
+    Any missing, non-finite or negative number is HUMAN: an unreadable look is never clean.
+    The model never declares clean; it only supplies numbers that this function judges.
+    """
+    nums = (start_g, end_g, coverage_pct)
+    for v in nums:
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:
+            return Verdict.HUMAN
+    limit = max(VISION_FLOOR_G, VISION_RESIDUE_FRAC * start_g)
+    if end_g <= limit and coverage_pct <= VISION_COVERAGE_MAX_PCT and camera_clean:
         return Verdict.DONE
     if attempts_done >= MAX_ATTEMPTS:
         return Verdict.HUMAN

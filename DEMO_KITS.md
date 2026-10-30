@@ -2,19 +2,20 @@
 
 One rig, three scene kits. Each kit is a preset (`--case`) plus stand-in material. The presets only set
 the operator's mess type and the surface setting; every rule, ladder and firmware limit is unchanged, and
-the scale and camera still decide clean. Say "stand-in material" out loud. We have not run real API powder,
+the camera-estimated weight and the pixel check still decide clean (no load cell is fitted). Say "stand-in material" out loud. We have not run real API powder,
 electrolyte or solder paste.
 
 ## Kits
-| Kit | Stand-in | Command (add `--llm --camera 0` for the vision look and spoken warning) | What to expect |
+| Kit | Stand-in | Command (add `--llm` for the vision look and spoken warning) | What to expect |
 |---|---|---|---|
-| Pharma | a pinch of flour + 3 to 5 lentils | `python run_rig.py --port COM3 --case pharma` | dry debris on glass; gentle then firmer pass; scale to ~0 g; camera agrees |
-| Battery, powder | a light dusting of cocoa | `python run_rig.py --port COM3 --case battery` | sensitive surface: never L2. One gentle pass may finish it; if not, a person takes over |
-| Battery, coffee | one teaspoon of coffee | `python run_rig.py --port COM3 --case battery --mess liquid` | camera sees liquid; spoken "Liquid spill detected. Keep people back. The robot will try a gentle clean."; gentle then absorbent pass |
-| Battery, camera adds caution | cocoa preset, then pour the coffee | `python run_rig.py --port COM3 --case battery --llm --camera 0` | operator said dry, camera sees liquid: spoken "A person will clean it."; no sweep at all |
-| SMT | rice + sesame + a dab of toothpaste | `python run_rig.py --port COM3 --case smt` | mixed mess on a protected surface: one gentle pass, then the rules bar the firm rung and a person takes over |
+| Pharma | a pinch of flour + 3 to 5 lentils | `python run_rig.py --port COM3 --camera 0 --weigh vision --case pharma` | dry debris on glass; gentle then firmer pass; estimated grams fall to ~0; camera agrees on two looks |
+| Battery, powder | a light dusting of cocoa | `python run_rig.py --port COM3 --camera 0 --weigh vision --case battery` | sensitive surface: never L2. One gentle pass may finish it; if not, a person takes over |
+| Battery, coffee | one teaspoon of coffee | `python run_rig.py --port COM3 --camera 0 --weigh vision --case battery --mess liquid` | camera sees liquid; spoken "Liquid spill detected. Keep people back. The robot will try a gentle clean."; gentle then absorbent pass |
+| Battery, camera adds caution | cocoa preset, then pour the coffee | `python run_rig.py --port COM3 --camera 0 --weigh vision --case battery --llm` | operator said dry, camera sees liquid: spoken "A person will clean it."; no sweep at all |
+| SMT | rice + sesame + a dab of toothpaste | `python run_rig.py --port COM3 --camera 0 --weigh vision --case smt` | mixed mess on a protected surface: one gentle pass, then the rules bar the firm rung and a person takes over |
 
-Explicit flags win over the preset: `--mess` and `--surface` override `--case`.
+Explicit flags win over the preset: `--mess` and `--surface` override `--case`. Every command needs the camera calibration
+first (HARDWARE_RUNBOOK.md, Phase 4): `calibrate_vision.py reference`, then `calibrate_vision.py dose`.
 
 Fake-rig result, SIMULATED (8 g residue model, one seed, not the hardware): pharma clean after 3 passes;
 battery powder hands over after 1 pass; battery liquid clean after 3 passes; SMT hands over after 1 pass.
@@ -47,13 +48,16 @@ people were in view.
 | SMT | 1 | | | | | | |
 (copy the rows for runs 2 to 5)
 
-## Judge question: where does the scale sit?
-Under the tile. The tile is the weigh zone, on one HX711 load cell; the mess lands on it, the camera looks
-down at it, the wiper clears it, and the scale reads the residue. It is a fixed single-tile weigh zone, not
-the whole floor. For a larger floor the same loop applies with a carry-under tray or swab-and-weigh, which
-we have designed but not built.
+## Judge question: how do you get grams without a scale?
+The camera does. The vision model estimates the mass of the material on the tile and how much of the tile it
+covers; one calibration dose, weighed on a kitchen scale, sets the multiplier. It is an estimate, roughly
++-20 to 40 percent, and we say so. Code, not the model, decides clean: the estimate must fall to 10 percent
+of where it started (or under 1 g), coverage must be under 2 percent, the pixel check must agree, and a
+second look right after must agree too. Any unreadable look stops the run and a person takes over.
+A load cell can return later without changing any of the safety rules.
 
 ## Honest limits
 Classification is into 5 fixed classes (dry debris, liquid, mixed, unknown, hazard), not material
-identification. The AI proposes from a fixed list; code validates; hardware vetoes; the scale decides clean.
-Hardware gates still open: E-stop wiring decision (INTEGRATION.md 8.1), CAL_FACTOR, firmware flash.
+identification. The AI proposes from a fixed list; code validates; hardware vetoes; code decides clean from the camera estimate.
+Gram figures are camera estimates; transparent liquids can read near zero (the camera-adds-caution path then sends them to a person).
+Hardware gates still open: E-stop wiring decision (INTEGRATION.md 8.1), firmware flash, camera calibration.

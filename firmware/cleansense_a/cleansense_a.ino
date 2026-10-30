@@ -3,7 +3,7 @@
 // NOT YET COMPILED ON HARDWARE. Safety logic is host-tested in limits.h.
 //
 // Pins (from IMPLEMENTATION_TASKS.md; avoid GPIO 0/2/12/15):
-//   HX711 DT 16, SCK 4 | servo PWM 18 | e-stop sense 21 (HIGH = healthy, button pulls LOW)
+//   HX711 DT 16, SCK 4 (unused without a load cell) | servo PWM 13 (wiring validated in CleanSense_Servo_Handoff) | e-stop sense 21 (HIGH = healthy, button pulls LOW)
 //   cancel 22 (LOW = pressed) | surface jumper 23 (LOW = sensitive)
 #include <string.h>
 #include <ArduinoJson.h>
@@ -11,7 +11,7 @@
 #include "limits.h"
 
 constexpr int PIN_HX_DT = 16, PIN_HX_SCK = 4;
-constexpr int PIN_SERVO = 18, PIN_ESTOP = 21, PIN_CANCEL = 22, PIN_SENSITIVE = 23;
+constexpr int PIN_SERVO = 13, PIN_ESTOP = 21, PIN_CANCEL = 22, PIN_SENSITIVE = 23;
 
 // Set by calibration (known-mass test). 1.0 = raw counts; must be calibrated before use.
 float CAL_FACTOR = 1.0f;
@@ -100,17 +100,11 @@ void doSweep(int id, int passes, int speed, int amp) {
     sendFault(estopOk() ? "refused" : "estop");
     return;
   }
-  int span = limits::ampDegrees(amp);
+  int reach = limits::reachDegrees(amp);
   uint32_t stepMs = limits::stepDelayMs(speed);
-  int centre = limits::SERVO_HOME_DEG;
-  for (int p = 0; p < passes; p++) {
-    if (!moveTo(centre - span, stepMs) || !moveTo(centre + span, stepMs)) {
-      parkHead();
-      sendFault(!estopOk() ? "estop" : cancelRequested ? "cancelled"
-                : limits::heartbeatLost(millis(), lastPingMs) ? "timeout" : "fault");
-      return;
-    }
-    if (!moveTo(centre, stepMs)) {
+  int home = limits::SERVO_HOME_DEG;
+  for (int p = 0; p < passes; p++) {  // one pass: home -> home+reach -> home
+    if (!moveTo(home + reach, stepMs) || !moveTo(home, stepMs)) {
       parkHead();
       sendFault(!estopOk() ? "estop" : cancelRequested ? "cancelled"
                 : limits::heartbeatLost(millis(), lastPingMs) ? "timeout" : "fault");

@@ -1,89 +1,61 @@
-# CleanSense: ordered execution checklist
+# CleanSense: ordered execution checklist (current plan)
 
-Source of truth: `STATUS.md` (state), `INTEGRATION.md` (hardware steps), `verify.sh` (software gate).
-Rule: do not start a step until the one above it has its pass check. If a step fails, stop, go to
-the triage table in `INTEGRATION.md` §9, and record the result in `STATUS.md` before retrying.
-Never delete logs in `runs/`.
+Plan: camera-estimated weight (no load cell, ADR-003), servo benched with `CleanSense_Servo_Handoff` then the run
+firmware on the same pin (GPIO13, ADR-005), no ESP32 B. Details and pass checks: `HARDWARE_RUNBOOK.md`.
+Wiring and triage reference: `INTEGRATION.md`. State: `STATUS.md`. Software gate: `bash verify.sh`.
+Rule: do not start a step until the one above it has its pass check. Two failures of a gate: stop and find the cause.
+Never delete logs in `runs/`. Never print or paste API keys.
 
-Legend: [SW] software, you can run it alone · [HW] needs the rig · [DEC] needs a decision from the team · [KEY] needs the API key (not set; not part of tomorrow's gate)
+Legend: [SW] software, laptop only · [HW] needs the rig · [DEC] decision · [KEY] needs an API key in `.env`
 
----
+## A. Laptop only (can run while someone wires)
+- [ ] A1 [SW] `bash verify.sh` exits 0 (see STATUS.md for the count). Pass: "ALL CHECKS PASSED".
+- [ ] A2 [DEC] **E-stop (INTEGRATION 8.1):** recommended = NC contact in series with the servo +5 V (power cut) plus the NO contact to GPIO 21. Record the choice in `STATUS.md`. Must be decided before any motor power (C1).
+- [ ] A3 [KEY] `python check_providers.py`: both keys list usable models (needed for vision weight, classification and the planner).
+- [ ] A4 [SW] Camera index probe; note `<CAM>`. Tile fully in view, lamp on.
+- [ ] A5 [SW] Piper installed, `PIPER_CMD` and `PIPER_VOICE` set; the speech one-liner (runbook 0.4) is audible.
 
-## A. Before anyone touches hardware (laptop only)
+## B. Wire and bench, power off (runbook Phase 1, 1b)
+- [ ] B1 [HW] Rules read aloud (INTEGRATION section 0): power off before wiring, common ground, servo never on 3V3 or 5V pin.
+- [ ] B2 [HW] Wire: servo signal D13 (GPIO13), servo supply with a 470 to 1000 uF capacitor, E-stop NC in series with servo +, cancel 22, sensitive jumper 23. Load-cell pins 16 and 4 stay unconnected. Pin map signed by a second person.
+- [ ] B3 [HW] Multimeter: no short 3V3-GND or 5V-GND; continuity on 21, 22, 23 only when pressed or jumpered.
+- [ ] B4 [HW] Bench build in `CleanSense_Servo_Handoff`: `python -m platformio run`, then `python -m platformio run -t upload` (BOOT if stuck), then `python -m platformio device monitor -b 115200`. Servo supply OFF while flashing.
+- [ ] B5 [HW] Bench test, horn off: `s`, `mode gentle`, `sweep`. Pass: slow smooth sweep, no ESP32 reset. Only `mode gentle`; never `jump`, `mode power` or `range`.
+- [ ] B6 [HW] `home` (0 degrees), fit the horn so the arm rests clear of the tile, then `mode gentle` and `sweep`: the arm goes 0 to 90 and back without hitting the tile edge or a hard stop. Never command above 90 degrees.
 
-- [ ] A1 [SW] `bash verify.sh` exits 0 (expect 250 tests, all checks pass). Pass: "ALL CHECKS PASSED".
-- [ ] A2 [SW] Read `git status`-equivalent: confirm no unexpected file changes (project is not a git repo, so run `ls -la` and check `STATUS.md` / `CHECKLIST.md` only changed as intended).
-- [ ] A3 [DEC] **E-stop decision (INTEGRATION §8.1).** Choose one, record it in `STATUS.md`:
-      - (a) keep HIGH = healthy (fail-open, as built) and accept the risk, **or**
-      - (b) switch to normally-closed logic (LOW = healthy, broken wire = stop), then do A4.
-      Must be decided before step C1 (any motor connected).
-- [ ] A4 [SW] Only if A3(b): change the e-stop logic in `firmware/cleansense_a/cleansense_a.ino` and its host test, rebuild, run `verify.sh`. Pass: loopback `estop` test updated and green.
-- [ ] A5 [SW] Print `INTEGRATION.md` §2 pin table and §3 wiring diagrams for the teammate. Pass: teammate has the paper copy.
-- [ ] A6 [SW] Decide the CAL_FACTOR path: calibrate on the rig (step C4). Until then CAL_FACTOR = 1.0 and results are raw counts. Record this in `STATUS.md`.
+## C. Run firmware and motion (runbook Phase 2, 3)
+- [ ] C0 [HW] On the Windows PC (the cloud session cannot reach the ESP32 toolchain servers): `cd firmware/cleansense_a` then `python -m platformio run`. Build only; no board needed. Pass: `SUCCESS`. On failure copy the full error text.
+- [ ] C1 [HW] Close the monitor. In `firmware/cleansense_a`: `python -m platformio run` and `python -m platformio run -t upload`. **First build of this sketch on the ESP32 toolchain**: on a compile error, fix, `bash verify.sh`, reflash.
+- [ ] C2 [HW] `python bench_check.py --port <PORT> --step link` prints `PASS link`; port opens with no reset loop. (Do NOT run `--step scale`: no load cell.)
+- [ ] C3 [HW] `bench_check.py --step sweep --confirm-clear-area`: one slow pass, head parks.
+- [ ] C4 [HW] E-stop mid-sweep: motor power cut, run reports `estop`.
+- [ ] C5 [HW] Cancel during a countdown: `cancelled`. Unplug USB mid-motion: head parks within 3 s. Jumper on plus medium speed: firmware refuses.
+- [ ] C6 [SW] Record B and C results in `STATUS.md`. Any motion failure: stop, INTEGRATION 9.
 
-## B. Hardware bench, power off → USB only (INTEGRATION §0–§5)
+## D. Camera calibration and first runs (runbook Phase 4)
+- [ ] D1 [HW] `python calibrate_vision.py reference --camera <CAM>` (tile empty; do not move camera or lamp after).
+- [ ] D2 [HW] Weigh about 5 g of flour on a kitchen scale, place it with a marker in frame: `python calibrate_vision.py dose --camera <CAM> --grams <G>`. Scale between 0.2 and 5.
+- [ ] D3 [HW] Look test, servo supply OFF: `python run_rig.py --port <PORT> --camera <CAM> --reference calibration/reference.npy --weigh vision --llm --case battery --mess liquid`. Pass: Live page shows liquid, a gram figure and the frame; the warning is spoken; nothing sweeps.
+- [ ] D4 [HW] Frame shows the spill at the moment of the look. If not, move camera or spill and repeat D3.
+- [ ] D5 [HW] Servo ON, `--case pharma` with flour: estimate falls, pixel check agrees twice: `done`.
+- [ ] D6 [HW] Repeat the 5 g dose three times; start grams within about +-40 percent.
+- [ ] D7 [SW] `runs/` has one log per run and `verify_log` passes.
 
-- [ ] B1 [HW] §0 rules read aloud with the teammate (power off before wiring, common ground, no 5 V into GPIO, servo not on 3V3).
-- [ ] B2 [HW] §3a–§3c wire HX711 + load cell, SG90 supply (not yet connected to servo signal), buttons, jumper. Keep servo supply OFF.
-- [ ] B3 [HW] §4.1 no shorts (continuity 3V3–GND, 5 V–GND, with everything unplugged). Pass: no beep, > 10 kΩ.
-- [ ] B4 [HW] §4.2 pin map compared wire-by-wire with §2, **second person signs**.
-- [ ] B5 [HW] §4.3 load cell resistance matches datasheet (usually 350–1,000 Ω per pair).
-- [ ] B6 [HW] §4.4 button continuity on GPIO 21, 22 and 23.
-- [ ] B7 [HW] §5.1 flash firmware A with arduino-cli (ESP32Servo + ArduinoJson v6 installed). Pass: compile and upload succeed. **First time the sketch is compiled for the real ESP32 toolchain.** If compile fails, fix in the sketch, then `bash verify.sh` again, before re-flashing.
-- [ ] B8 [HW] §5.1a open the port (laptop holds DTR/RTS low). Pass: park reply within about 3 s, no reset loop.
-- [ ] B9 [HW] §5.2 `python3 bench_check.py --port <PORT> --step link` → `PASS link`.
-- [ ] B10 [HW] §5.3 empty tile: `--step scale` → `PASS scale` (std ≤ 0.2 g, |median| ≤ 0.5 g). If it fails, §9 and stop.
-- [ ] B11 [HW] §5.4 known mass (e.g. 50 g): `--step scale --not-empty`. Pass: reading rises by about the mass, positive sign. If negative, swap A+ and A− (not E).
-- [ ] B12 [HW] §5.5 unplug USB 5 s, replug. Pass: `PASS link` again.
-- [ ] B13 [SW] Record bench results in `STATUS.md` (date, port, pass/fail per step).
+## E. Rehearse (runbook Phase 5)
+- [ ] E1 [HW] Five runs per kit in `DEMO_KITS.md`, rehearsal log filled; one with the key unset (AI offline banner); one cancel.
+- [ ] E2 [HW] Backup video recorded the same day (`BACKUP_VIDEO.md`).
 
-## C. Motion (servo supply ON, wiper clear of tile and scale) (INTEGRATION §6)
+## F. Close-out
+- [ ] F1 [SW] `bash verify.sh` exit 0. `STATUS.md` updated: every step above with date and result; open items moved to Known gaps.
+- [ ] F2 [HW] Sign-off (INTEGRATION 10, load-cell items excluded): wiring photo saved beside `calibration/`, name and date.
+- [ ] F3 [DEC] Commit and push only when asked.
 
-Requires A3 decided and B1–B13 passed. Hand on the servo supply switch the whole time.
+## Cut from the demo (do not do)
+Load cell, HX711 wiring, `CAL_FACTOR`, `calibrate.py`, `bench_check.py --step scale`, ESP32 B and `--offline --edge-port`.
+Their code and docs stay in the repo for later.
 
-- [ ] C1 [HW] §6.1 `python3 bench_check.py --port <PORT> --step sweep --confirm-clear-area` → `PASS sweep`, head parked after.
-- [ ] C2 [HW] §6.2 press e-stop mid-sweep. Pass: head stops and parks; run reports `estop`, not PASS.
-- [ ] C3 [HW] §6.3 press cancel during countdown of a dry run. Pass: run reports `cancelled`, no sweep.
-- [ ] C4 [HW] §6.4 unplug USB during a motion check. Pass: head parks within 3 s.
-- [ ] C5 [HW] §6.5 sensitive jumper on, medium-speed request. Pass: firmware refuses; never sweeps at L2.
-- [ ] C6 [SW] Record results in `STATUS.md`. If any motion check fails, do not continue to D; go to §9.
-
-## D. Calibration and first run (INTEGRATION §7)
-
-- [ ] D1 [HW] §7.1 `python3 calibrate.py --port <PORT> --out calibration/` (tile empty, head parked). Pass: repeatable within ±0.2 g.
-- [ ] D2 [HW] Set `CAL_FACTOR` in firmware from the known-mass test, rebuild (B7 path), re-run B10–B11. Pass: 50 g reads 50 g ± 0.5 g.
-- [ ] D3 [HW] §7.2 dry run, no camera: `python3 run_rig.py --port <PORT> --mess dry_debris --surface glass`. Expected: finishes with `human` (safe result, no camera means never DONE).
-- [ ] D4 [HW] §7.3 capture empty-tile reference, then run with `--camera 0 --reference calibration/reference.npy`. Pass: verdicts match what you see on the tile.
-- [ ] D5 [SW] Check `runs/` contains one log per run, with the hash chain intact (`verify_log` passes).
-
-## E. Offline tier, ESP32 B (INTEGRATION §7.4 — BLOCKED until E1–E2 done)
-
-ESP32 B has no sketch and no trained model yet. Do not wire the piezo until E1–E2 are done.
-
-- [ ] E1 [SW] Decide scope for tonight: (a) rule baseline on the existing features (a few thresholds, host-tested), plus an ESP32 B sketch that sends `edge_vote`; or (b) skip the offline tier for tomorrow and say so in the demo.
-- [x] E2 [SW] DONE: ESP32 B sketch + rule baseline, host-compiled with -Werror, in `verify.sh`; 266 tests green (after the dashboard pages were added). Still to do on the board: E2b [HW] compile and flash the ESP32 B sketch with arduino-cli (same toolchain step as B7), and confirm `{"evt":"boot","mid":...}` appears.
-- [ ] E3 [HW] Piezo bias network per INTEGRATION §3d. Check the mid-rail voltage (~1.65 V) with the meter before connecting the piezo. Pass: within 0.1 V.
-- [ ] E4 [HW] Trigger the piezo by hand, confirm `edge_vote` arrives on the laptop. Pass: parsed by `edge.py`.
-- [ ] E5 [HW] §7.4 `python3 run_rig.py ... --offline --edge-port <B>`. Pass: completes with no network. Expect the MIN_CONF placeholder to be marked in the log, not claimed as accuracy.
-- [ ] E6 [SW] Record in `STATUS.md`: "piezo edge vote: rule baseline, not measured accuracy".
-
-## F. Software items that do not need the rig (run any time, safe to skip for tomorrow)
-
-- [ ] F1 [SW] HD10K: import the test split (done for test: 1,867 labelled rows). Use for dry vs liquid sanity only. Pass: `pytest tests/test_hd10k_import.py` green.
-- [ ] F2 [KEY] AI ablation arm and the ≥90% photo gate. Blocked until the key is set and 25–30 rig photos are labelled. Do not set the key without the user asking.
-- [ ] F3 [SW] Re-run `ablation.py` and `eval_table.py runs/*.jsonl` after the rig runs, to publish the results table.
-
-## G. Close-out
-
-- [ ] G1 [SW] Run `bash verify.sh` once more. Pass: exit 0.
-- [ ] G2 [SW] Update `STATUS.md`: each step in B–E with date and result. Move any open item to "Known gaps" with a reason.
-- [ ] G3 [HW] Sign-off (INTEGRATION §10): §4 bench, §5 power-on, §6 motion, §7.1 calibration recorded, §7.2 dry run safe result, wiring photo saved beside `calibration/`, name and date.
-- [ ] G4 [DEC] Decide whether to commit (not done so far; only on request).
-
----
-
-## Stop conditions (go straight to triage, do not "push through")
-- Any motion check in C fails → stop motion work until §9 is resolved.
-- Scale reads negative after swap, or repeatability outside ±0.2 g → stop calibration.
-- Any `fault: estop` on a healthy rig → check the button and the wire (§4.4) before anything else.
-- Any unexpected reset of the board during a run → stop, re-do B8.
+## Stop conditions
+- Any motion check in C fails: stop motion work until INTEGRATION 9 is resolved.
+- `run_rig.py` or `bench_check.py --step scale` started without `--weigh vision` on this rig: unplug USB; the firmware is waiting on the missing chip and is not watching the E-stop.
+- Unexpected board reset during a run: stop, redo C1 and C2.
+- Any `fault: estop` on a healthy rig: check the button wiring before anything else.

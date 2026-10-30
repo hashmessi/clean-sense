@@ -42,7 +42,7 @@ Run `./verify.sh` for every check that works without hardware or an API key. Las
 - tests/ — rules, runs, serial rig, LLM wiring, camera/calibration, phase 4 (table, ablation, dataset, photo eval, dashboard)
 
 ## Known gaps (honest)
-- **Firmware not compiled or flashed.** HX711 scale factor `CAL_FACTOR` is 1.0 and must come from a known-mass test. E-stop wiring assumed: button pulls pin 21 LOW, HIGH = healthy. Confirm with the teammate who wires it.
+- **Run firmware not built on the ESP32 toolchain or flashed.** The servo bench sketch (`CleanSense_Servo_Handoff`) is reported hardware-validated by its author (not re-run here); our `cleansense_a` uses its servo pin (GPIO13, ADR-005). No load cell: grams are camera estimates (ADR-003), `CAL_FACTOR` is unused. E-stop wiring assumed: button pulls pin 21 LOW, HIGH = healthy. Confirm with the teammate who wires it.
 - **Cancel:** the press is caught during a sweep (firmware flag) and between messages (laptop drains the serial buffer). Verify on the bench.
 - **Temperature not set in the API call:** the installed Anthropic SDK version has no `temperature` parameter. Output is constrained by the JSON-only prompt and the validator, not by temperature 0. Decide whether to use another method when you add the key.
 - **Budget counting (CLOSED, QA):** LLMPlanner now hard-caps HTTP calls at `MAX_HTTP_CALLS_PER_RUN` = 12, counting the repair retry. Calls beyond the cap are refused with `PlannerUnavailable` and never sent. Tests: `tests/test_qa_gaps.py`.
@@ -69,7 +69,7 @@ Run `./verify.sh` for every check that works without hardware or an API key. Las
 | Image input to planner | Already wired | CLOSED (verified by test) |
 | Dashboard AI OFFLINE | Yes | CLOSED (breaker state in event) |
 | E-stop fail-open (§8.1) | No: a safety wiring decision | **OPEN, decide before any motor connects** |
-| CAL_FACTOR 1.0 | No: needs a known-mass test | OPEN, step 7.1 |
+| CAL_FACTOR 1.0 | Not applicable: no load cell (ADR-003) | CLOSED by plan change; replaced by camera calibration (calibrate_vision.py) |
 | Boot reset not confirmed on a real board | No: hardware | OPEN, step 5.1a |
 | Cancel press not verified on the bench | No: hardware | OPEN, step 6.3 |
 | arduino-cli compile on the team machine | No: needs the ESP32 toolchain | OPEN, step 5.1 |
@@ -81,9 +81,7 @@ Run `./verify.sh` for every check that works without hardware or an API key. Las
 | Temperature parameter absent in SDK | No change needed: output is constrained by the JSON-only prompt and the validator | Accepted |
 
 ## To finish Phase 2 (needs the rig)
-1. Flash firmware/cleansense_a/cleansense_a.ino (install ESP32Servo + ArduinoJson).
-2. `python3 calibrate.py --port <port> --camera <idx>` → check repeatable_within_target is true; set CAL_FACTOR.
-3. `python3 run_rig.py --port <port> --camera <idx> --mess dry_debris --surface glass` → first real run.
+Follow `CHECKLIST.md` (and `HARDWARE_RUNBOOK.md`): bench the servo with CleanSense_Servo_Handoff, flash firmware/cleansense_a (PlatformIO), `calibrate_vision.py reference` then `dose`, then `run_rig.py --weigh vision --camera <idx> --reference calibration/reference.npy --case pharma`.
 
 ## To finish Phase 3 (needs your key + photos)
 1. `export ANTHROPIC_API_KEY=...` (never commit it).

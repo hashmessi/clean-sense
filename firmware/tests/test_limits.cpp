@@ -12,6 +12,14 @@ int main() {
   assert(clampAngle(200) == SERVO_MAX_DEG);
   assert(clampAngle(90) == 90);
 
+  // geometry = CleanSense_Servo_Handoff (hardware-validated): home 0, sweep 0 -> 90 -> 0, never past 90
+  assert(SERVO_HOME_DEG == 0 && SERVO_MIN_DEG == 0 && SERVO_MAX_DEG == 90);
+  assert(clampAngle(-5) == 0 && clampAngle(91) == 90 && clampAngle(180) == 90);
+  assert(reachDegrees(FULL) == 90);                       // the validated full sweep
+  assert(reachDegrees(NARROW) == 40);                     // same 40 degree narrow span as before
+  assert(SERVO_HOME_DEG + reachDegrees(FULL) <= SERVO_MAX_DEG);
+  assert(SERVO_HOME_DEG + reachDegrees(NARROW) < SERVO_HOME_DEG + reachDegrees(FULL));
+
   // table: L1, L2, L3 must pass on a normal surface
   assert(motionAllowed(1, SLOW, NARROW, false, true));   // L1
   assert(motionAllowed(3, MED, FULL, false, true));      // L2

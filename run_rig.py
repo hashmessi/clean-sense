@@ -28,6 +28,7 @@ from announce import ANNOUNCE_WAIT_S, NullSpeaker, announce_for_run, speaker_fro
 from llm_transport import load_env_file
 from edge import fuse, open_edge_link
 from serial_rig import open_serial_rig
+from vision_weight import VisionLooker, VisionVerifier, VisionWeighRig, load_scale
 
 
 def _save_frame(png: bytes, path: Optional[Path]) -> bool:
@@ -90,6 +91,23 @@ class CameraCheck:
         return buf.tobytes() if ok else None
 
 
+def _vision_rig(inner, camera, calibration: str):
+    """Camera-estimated weight in place of the load cell (ADR-003). Refuses to start uncalibrated."""
+    from camera import encode_png
+    from llm_transport import build_transports
+
+    try:
+        scale = load_scale(Path(calibration))
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+    load_env_file()
+    transports = build_transports(os.environ.get("LLM_PROVIDER", ""))
+    if not transports:
+        raise SystemExit("--weigh vision needs a provider key in .env (see check_providers.py)")
+    looker = VisionLooker(lambda: encode_png(camera.grab_bgr()), transports, scale=scale)
+    return VisionWeighRig(inner, looker)
+
+
 def main() -> None:
     from camera import Camera
 
@@ -107,6 +125,10 @@ def main() -> None:
     ap.add_argument("--case", default=None, choices=sorted(CASES),
                     help="tabletop industry preset: sets the mess type and surface (explicit flags win)")
     ap.add_argument("--llm", action="store_true")
+    ap.add_argument("--weigh", default="scale", choices=["scale", "vision"],
+                    help="scale = HX711 load cell (default); vision = camera-estimated grams, no load cell "
+                         "(needs --camera, a provider key and calibration/vision_weight.json)")
+    ap.add_argument("--vision-calibration", default="calibration/vision_weight.json")
     ap.add_argument("--log", default="runs")
     args = ap.parse_args()
 
@@ -114,6 +136,12 @@ def main() -> None:
         raise SystemExit("--offline and --llm cannot be combined")
     if args.offline and not args.edge_port:
         raise SystemExit("--offline needs --edge-port (the edge vote is the only perception)")
+
+    vision = args.weigh == "vision"
+    if vision and args.camera is None:
+        raise SystemExit("--weigh vision needs --camera")
+    if vision and args.offline:
+        raise SystemExit("--weigh vision needs the network (--offline cannot be used)")
 
     mess_arg, surface = resolve(args.case, args.mess, args.surface, offline=args.offline)
     operator = mess_arg if mess_arg else (None if args.offline else "dry_debris")
@@ -133,7 +161,17 @@ def main() -> None:
 
     from runctl import FileCancelRig, clear_cancel
     clear_cancel(Path(args.log))  # a stale CANCEL from an old run must not stop this one
-    rig = FileCancelRig(open_serial_rig(args.port, camera_clean=check), args.log)
+    verifier = None
+    inner = open_serial_rig(args.port, camera_clean=check)
+    if vision:
+        try:
+            inner = _vision_rig(inner, camera, args.vision_calibration)
+        except SystemExit:
+            inner.close()
+            camera.close()
+            raise
+        verifier = VisionVerifier(inner)
+    rig = FileCancelRig(inner, args.log)
     planner = rules_planner
     breaker = None
     if args.llm:
@@ -165,7 +203,7 @@ def main() -> None:
     announce_for_run(template_key(perceived, forced), speaker, log, wait_s=ANNOUNCE_WAIT_S)
     planner = guarded_planner(planner, forced, perceived, mess)
     try:
-        result = run(scenario, rig, planner=planner, log=log)
+        result = run(scenario, rig, planner=planner, log=log, verifier=verifier)
     finally:
         rig.close()
         if camera is not None:

@@ -75,7 +75,7 @@ def _firmware_pins() -> dict[str, int]:
     return pins
 
 
-EXPECTED_A = {"PIN_HX_DT": 16, "PIN_HX_SCK": 4, "PIN_SERVO": 18,
+EXPECTED_A = {"PIN_HX_DT": 16, "PIN_HX_SCK": 4, "PIN_SERVO": 13,
               "PIN_ESTOP": 21, "PIN_CANCEL": 22, "PIN_SENSITIVE": 23}
 
 
@@ -101,3 +101,28 @@ def test_piezo_pin_for_esp32_b_is_an_adc1_pin():
     assert m, "PIEZO_ADC row missing in INTEGRATION.md"
     pin = int(m.group(1))
     assert pin in ADC1_PINS and pin not in FORBIDDEN_OUT
+
+
+def test_platformio_build_pins_match_the_known_good_bench_toolchain():
+    """firmware/cleansense_a/platformio.ini mirrors CleanSense_Servo_Handoff (the sketch known to build)."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    ini = (root / "firmware" / "cleansense_a" / "platformio.ini").read_text(encoding="utf-8")
+    assert "platform = espressif32 @ 8.0.0" in ini and "ESP32Servo @ 3.2.1" in ini and "ArduinoJson" in ini
+    assert "src_dir = ." in ini and "board = esp32dev" in ini
+    handoff = root / "CleanSense_Servo_Handoff" / "platformio.ini"
+    if handoff.exists():  # the bench folder travels with the repo; same pins, same toolchain
+        text = handoff.read_text(encoding="utf-8")
+        assert "espressif32 @ 8.0.0" in text and "ESP32Servo @ 3.2.1" in text
+
+
+def test_run_firmware_uses_the_bench_validated_servo_pin_and_the_bench_sketch_is_not_the_run_firmware():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    ino = (root / "firmware" / "cleansense_a" / "cleansense_a.ino").read_text(encoding="utf-8")
+    assert "PIN_SERVO = 13" in ino  # same GPIO as CleanSense_Servo_Handoff, so no wire moves between bench and run
+    bench = root / "CleanSense_Servo_Handoff" / "test_servo_wired.ino"
+    if bench.exists():
+        text = bench.read_text(encoding="utf-8")
+        assert "#define PIN_SERVO_SIG             13" in text  # the validated wiring
+        assert '"cmd"' not in text  # no JSON protocol: run_rig.py cannot talk to it

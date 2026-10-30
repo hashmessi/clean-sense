@@ -8,6 +8,12 @@ Scope: ESP32 A (sweeper, load cell, e-stop, cancel, surface jumper), the laptop
 link, and ESP32 B (piezo, advisory only). The laptop software is already built and
 tested without hardware (`bash verify.sh`).
 
+> **CURRENT PLAN (ADR-003, ADR-004, ADR-005): no load cell, no ESP32 B.** Grams come from the camera
+> (`run_rig.py --weigh vision`). Skip the load-cell parts: 3a, 4.3, 5.3, 5.4, 7.1, 8.2 and `calibrate.py`.
+> The servo is wired and benched first with `CleanSense_Servo_Handoff` (signal on GPIO13, the validated wiring),
+> and the run firmware uses the same pin. The ordered steps are in `HARDWARE_RUNBOOK.md` and `CHECKLIST.md`;
+> this file stays the wiring and triage reference.
+
 ---
 
 ## 0. Rules that apply to every step
@@ -42,9 +48,9 @@ tested without hardware (`bash verify.sh`).
 
 | Signal | Board | GPIO | Direction | Notes |
 |---|---|---|---|---|
-| `PIN_HX_DT` | A | 16 | input | HX711 data out |
-| `PIN_HX_SCK` | A | 4 | output | HX711 clock |
-| `PIN_SERVO` | A | 18 | PWM output | SG90 orange wire |
+| `PIN_HX_DT` | A | 16 | input | HX711 data out (unused without a load cell: leave unconnected) |
+| `PIN_HX_SCK` | A | 4 | output | HX711 clock (unused: leave unconnected) |
+| `PIN_SERVO` | A | 13 | PWM output | SG90 orange wire (same pin as CleanSense_Servo_Handoff, `D13`) |
 | `PIN_ESTOP` | A | 21 | input, pull-up | LOW = button pressed (see §8, safety finding) |
 | `PIN_CANCEL` | A | 22 | input, pull-up | LOW = pressed |
 | `PIN_SENSITIVE` | A | 23 | input, pull-up | LOW = jumper on (sensitive surface) |
@@ -81,12 +87,12 @@ Load cell (4 wires)            HX711 breakout             ESP32 A
 ```
 Servo supply (5 V, ≥1 A) +  ─────►  servo red
 Servo supply GND            ─────►  servo brown  ─── common GND
-ESP32 A GPIO 18             ─────►  servo orange (signal)
-100 µF electrolytic across the servo supply, close to the servo
+ESP32 A GPIO 13 (D13)       ─────►  servo orange (signal)
+470 to 1000 µF electrolytic across the servo supply, close to the servo (long leg to +)
 ```
 
 - The wiper arm must be **clear of the tile and the scale** during bench checks.
-- Set the servo horn to the home position by hand before you power it.
+- Home is **0 degrees** and a full sweep is 0 to 90 and back (the geometry validated in `CleanSense_Servo_Handoff`). Set the horn to 0 by hand before you power it; the firmware writes 0 at boot.
 
 ### 3c. Buttons and jumper (ESP32 A)
 
@@ -135,11 +141,11 @@ Power the board by USB only. Keep the servo supply **off** for this section.
 
 | # | Step | Command | Pass |
 |---|---|---|---|
-| 5.1 | Flash A | `arduino-cli compile --fqbn esp32:esp32:esp32 firmware/cleansense_a` then `arduino-cli upload -p <PORT> --fqbn esp32:esp32:esp32 firmware/cleansense_a` (install the ESP32Servo and ArduinoJson v6 libraries first). The same sketch already compiles on a PC against the real ArduinoJson 6.21.5 (`bash verify.sh`), so only the ESP32 toolchain step is new | Compiles with no errors; upload succeeds |
+| 5.1 | Flash A | PlatformIO (same pins as the validated bench build): `cd firmware/cleansense_a` then `python -m platformio run` and `python -m platformio run -t upload` (hold BOOT if it stalls at `Connecting....`). Or `arduino-cli compile --fqbn esp32:esp32:esp32 firmware/cleansense_a` then `arduino-cli upload -p <PORT> --fqbn esp32:esp32:esp32 firmware/cleansense_a` (install the ESP32Servo and ArduinoJson v6 libraries first). The same sketch already compiles on a PC against the real ArduinoJson 6.21.5 (`bash verify.sh`), so only the ESP32 toolchain step is new | Compiles with no errors; upload succeeds |
 | 5.1a | Opening the port does not reset the board | The laptop holds DTR and RTS low when it opens the port (`open_serial_rig`). If the board still resets, the handshake retries and the first run still waits for boot | Log shows a park reply within about 3 s |
 | 5.2 | Link alive | `python3 bench_check.py --port <PORT> --step link` | `PASS link` |
-| 5.3 | Scale reads | With the tile **empty**: `python3 bench_check.py --port <PORT> --step scale` | `PASS scale`, std ≤ 0.2 g, |median| ≤ 0.5 g |
-| 5.4 | Scale responds | Put a known mass (for example 50 g) on the tile, then run `--step scale --not-empty` | Reading changes by about the known mass; sign is positive |
+| 5.3 | Scale reads (SKIPPED: no load cell, ADR-003) | With the tile **empty**: `python3 bench_check.py --port <PORT> --step scale` | `PASS scale`, std ≤ 0.2 g, |median| ≤ 0.5 g |
+| 5.4 | Scale responds (SKIPPED: no load cell) | Put a known mass (for example 50 g) on the tile, then run `--step scale --not-empty` | Reading changes by about the known mass; sign is positive |
 | 5.5 | Heartbeat | Unplug USB for 5 s, then replug | Board is still responsive after replug (`PASS link`) |
 
 If 5.3 fails, stop and go to §7.
@@ -169,9 +175,9 @@ Power the servo supply only now. Keep one hand on its switch.
 
 | # | Step | Command | Pass |
 |---|---|---|---|
-| 7.1 | Calibrate | `python3 calibrate.py --port <PORT> --out calibration/` (tile empty, head parked) | Repeatable within ±0.2 g; set `CAL_FACTOR` in the firmware from a known mass before 7.2 |
-| 7.2 | Dry run, no camera | `python3 run_rig.py --port <PORT> --mess dry_debris --surface glass` | The run finishes with `human` (no camera means it can never say DONE). That is the expected safe result |
-| 7.3 | Camera | Add `--camera 0 --reference calibration/reference.npy` after capturing the empty-tile reference | Verdicts agree with what you see |
+| 7.1 | Calibrate the camera (replaces the load-cell calibration) | `python3 calibrate_vision.py reference --camera <CAM>`, then put a weighed dose on the tile: `python3 calibrate_vision.py dose --camera <CAM> --grams <G>` | `calibration/reference.npy` and `calibration/vision_weight.json` saved; scale between 0.2 and 5 |
+| 7.2 | Dry run, servo supply OFF | `python3 run_rig.py --port <PORT> --camera <CAM> --reference calibration/reference.npy --weigh vision --case pharma` | Nothing sweeps (no motor power); the run ends `aborted` or `human`, never `done` while the tile is dirty. **Never run `run_rig.py` without `--weigh vision` on a rig with no load cell: the firmware waits forever on the missing chip** |
+| 7.3 | Live run | Same, servo supply ON | Estimated grams fall, the pixel check agrees on two looks: `done` |
 | 7.4 | Offline run | Add `--offline --edge-port <B>` only after ESP32 B is flashed | Completes with no network |
 
 Note the outcome of every run in the log folder, `runs/`. Do not delete logs.
@@ -185,7 +191,7 @@ Note the outcome of every run in the log folder, `runs/`. Do not delete logs.
    would make "healthy" the **LOW** state with a normally-closed contact, so a broken wire
    reads as stop. This needs a firmware decision before the motor is connected. Until then,
    the e-stop is not a verified safety stop. Do not rely on it alone.
-2. **CAL_FACTOR is 1.0.** The mass reading is in raw counts until step 7.1 sets it.
+2. **CAL_FACTOR is not used** while there is no load cell (grams come from the camera estimate, ADR-003).
 3. **ESP32 B sketch exists but is host-tested only** (`firmware/cleansense_b/cleansense_b.ino`, rule baseline in `piezo_rules.h`). It has not been compiled for the ESP32 or flashed. Its thresholds are uncalibrated, and it never reports liquid. Do not treat its votes as measurements.
 
 ---
@@ -207,9 +213,9 @@ Note the outcome of every run in the log folder, `runs/`. Do not delete logs.
 ## 10. Sign-off
 
 - [ ] §4 bench checks all pass (second person checked the pin map)
-- [ ] §5 power-on checks 5.1 to 5.5 pass
+- [ ] §5 power-on checks 5.1, 5.1a, 5.2 and 5.5 pass (5.3, 5.4 skipped: no load cell)
 - [ ] §6 motion checks 6.1 to 6.5 pass, with the e-stop finding in §8.1 decided
-- [ ] §7.1 calibration recorded (`calibration/calibration.json`), `CAL_FACTOR` set
+- [ ] §7.1 camera calibration recorded (`calibration/reference.npy`, `calibration/vision_weight.json`)
 - [ ] §7.2 dry run finishes with the expected safe result
 - [ ] Wiring photo taken and saved beside `calibration/`
 - [ ] Name and date: ____________________

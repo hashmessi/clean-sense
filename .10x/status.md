@@ -12,4 +12,7 @@ Phase: Tabletop demo gaps built and verified (Sense card, camera frame, --case p
 | Hardware gates (phases 2 to 4) | Open. Need the rig. |
 | Live page Sense card + camera frame (/frame.png) | Built, tested, browser-checked. Real frame and provider untested. |
 | `--case pharma/battery/smt` presets, DEMO_KITS.md | Built, tested on the fake rig (SIMULATED). Rehearse on hardware. |
-| Tests | 398 passed. verify.sh exit 0. |
+| Camera-estimated weight (no load cell), `--weigh vision`, ADR-003 | Built, tested with fakes. Live provider accuracy, webcam framing and calibration untested. Dashboard unchanged. |
+| Servo pin 13 (ADR-005), geometry home 0 and sweep 0 to 90 (ADR-006), CHECKLIST.md rewritten | Done in docs, firmware and tests (new host geometry test). Not built on ESP32 toolchain. |
+| ESP32 toolchain build attempt (2026-10-30, cloud session) | BLOCKED by network policy, not by the code: `pio run` stops at `Platform Manager: Installing espressif32 @ 8.0.0` with `HTTPClientError:`; the proxy answers 403 to CONNECT for api.registry.platformio.org, and dl.platformio.org, dl.espressif.com and downloads.arduino.cc are unreachable. Both `platformio.ini` files parse (env esp32dev, pinned libs). Sketch never compiled for the ESP32. Must be built on the Windows PC. |
+| Tests | 462 passed. verify.sh exit 0. |

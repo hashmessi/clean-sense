@@ -1,3 +1,5 @@
+> Historical design document. Current plan: no load cell (camera-estimated weight, ADR-003), servo on GPIO13 (ADR-005), no ESP32 B. See CHECKLIST.md and HARDWARE_RUNBOOK.md.
+
 # CleanSense Lite — Software Implementation Tasks (hardware-confirmed 2026-10-29)
 
 ## Confirmed hardware → what changes in software

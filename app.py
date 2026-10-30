@@ -108,17 +108,23 @@ def run(
     planner: Planner = rules_planner,
     log: Optional[AuditLog] = None,
     temp_source: Optional[Callable[[], Optional[float]]] = None,
+    verifier: Optional[Callable[..., Verdict]] = None,
 ) -> RunResult:
     log = log or AuditLog()
+    verify_fn = verifier or verify  # default: the scale rule. A camera-estimate rig passes its own (ADR-003).
     rig.park()
     rig.tare()
-    start = rig.weigh().grams
+    try:
+        start = rig.weigh().grams
+    except RigFault as fault:  # a failed weigh before any motion: stop here, nothing has moved
+        log.write("allowed", fault=str(fault))
+        return RunResult(scenario.name, "aborted", 0, 0.0, 0.0, log.events)
     end = start
     ctx = Context(sensitive_surface=scenario.sensitive)
     log.write("sensor", start_g=start)
 
     # Already clean and camera agrees: nothing to do.
-    if verify(start, start, rig.camera_clean(), 0) is Verdict.DONE:
+    if verify_fn(start, start, rig.camera_clean(), 0) is Verdict.DONE:
         log.write("sensor", end_g=start, camera_clean=True, verdict=Verdict.DONE.value)
         return RunResult(scenario.name, "done", 0, start, start, log.events)
 
@@ -172,10 +178,14 @@ def run(
             return RunResult(scenario.name, "aborted", ctx.attempts_done, start, end, log.events)
         log.write("allowed", rung=plan.rung)
 
-        end = rig.weigh().grams
         attempts = ctx.attempts_done + 1
+        try:
+            end = rig.weigh().grams
+        except RigFault as fault:  # cannot tell what is left: stop, a person takes over
+            log.write("allowed", fault=str(fault))
+            return RunResult(scenario.name, "aborted", attempts, start, end, log.events)
         camera = rig.camera_clean()
-        verdict = verify(start, end, camera, attempts)
+        verdict = verify_fn(start, end, camera, attempts)
         log.write("sensor", end_g=end, camera_clean=camera, verdict=verdict.value)
         ctx = replace(ctx, attempts_done=attempts, last_rung=plan.rung)
 

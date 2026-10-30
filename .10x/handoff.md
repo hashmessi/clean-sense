@@ -14,3 +14,15 @@
 - On the PC: install Piper, set PIPER_CMD/PIPER_VOICE, run check_providers.py, then `run_rig.py --llm --camera <index> --case battery` with a coffee spill in view.
 - Open: perception frame is grabbed before the head parks (confirm the spill is in view); classifier accuracy on real spills; SMT/battery end states on hardware.
 - Execution order for the hardware and PC steps: HARDWARE_RUNBOOK.md (supersedes the order in INTEGRATION.md 7.1: CAL_FACTOR before calibrate.py; ESP32 B cut for the demo; E-stop recommendation = NC contact cutting servo power plus the existing GPIO signal; awaiting the user's decision).
+
+## Vision weight (ADR-003)
+No load cell. Run with `--weigh vision`; calibrate with `calibrate_vision.py reference` then `dose`. Never run the scale path on a rig without the HX711 (firmware blocks). Next: live provider accuracy and repeatability (HARDWARE_RUNBOOK.md 4.1 to 4.6).
+
+## Hardware integration (ADR-004)
+Bench the servo with `CleanSense_Servo_Handoff` first (runbook Phase 1b), then flash `cleansense_a` (same pin, GPIO13, no rewire; ADR-005). The bench sketch is never used for runs.
+
+## ADR-005
+Servo pin is now 13 (hardware-validated in CleanSense_Servo_Handoff). CHECKLIST.md and HARDWARE_RUNBOOK.md are the ordered plan; INTEGRATION.md is the wiring/triage reference with a banner for the no-load-cell plan.
+
+## ADR-006
+Run firmware geometry now matches the bench sketch: home 0, sweep 0 to 90 to 0, hard ceiling 90. Horn at 0 before power.

@@ -121,6 +121,9 @@ python3 run_rig.py --port /dev/ttyUSB0 --camera 0 --reference calibration/refere
 For the tabletop industry demo, `--case pharma|battery|smt` presets the mess type and surface (explicit
 `--mess` / `--surface` still win). Kits, commands and the rehearsal sheet are in `DEMO_KITS.md`.
 
+No load cell: `--weigh vision` takes the gram figure from the camera (an estimate, about +-20 to 40 percent).
+Calibrate with `calibrate_vision.py` (empty-tile reference, then one known dose). Design: `.10x/adrs/003-camera-estimated-weight.md`.
+
 Calibrate with the tile empty and the head parked. `run_rig.py` writes JSONL logs to
 `runs/`. Without `--camera`, no run can say DONE. Add `--llm` for the AI planner
 (needs `ANTHROPIC_API_KEY`); the default is rules-only.
@@ -148,7 +151,7 @@ python3 eval_photos.py --labels eval/labels.csv --out eval/photos.json
   under those assumptions, not the real wiper.
 - The 0.5 g and 3% thresholds are not trusted until calibration repeatability passes.
 - Firmware is host-tested only; it has not been compiled for the ESP32 or flashed. ESP32 B has a rule-baseline sketch (`firmware/cleansense_b/cleansense_b.ino`), host-tested, with uncalibrated thresholds and no liquid class. There is no trained model.
-- `CAL_FACTOR` is a placeholder (1.0) until a known-mass test sets it.
+- No load cell is fitted: grams are camera estimates (`--weigh vision`, about +-20 to 40 percent). `CAL_FACTOR` is unused until a load cell returns.
 - Temperature is not a parameter of the Anthropic SDK version in use, so the model
   is not deterministic. Determinism comes from enum-only output plus the validator.
 - No hash chain on the audit log yet.

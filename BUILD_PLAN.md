@@ -1,3 +1,5 @@
+> Historical design document. Current plan: no load cell (camera-estimated weight, ADR-003), servo on GPIO13 (ADR-005), no ESP32 B. See CHECKLIST.md and HARDWARE_RUNBOOK.md.
+
 # CleanSense Lite — Software Build Plan (4 phases, each gated by verification)
 Date 2026-10-29. Companion to PROJECT.md (decisions) — this file is the order of work. Hour figures are estimates (~20 h total, 1–3 people). A phase is DONE only when its gate passes; otherwise fix before moving on.
 

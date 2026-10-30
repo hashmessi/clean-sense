@@ -1,3 +1,5 @@
+> Historical design document. Current plan: no load cell (camera-estimated weight, ADR-003), servo on GPIO13 (ADR-005), no ESP32 B. See CHECKLIST.md and HARDWARE_RUNBOOK.md.
+
 # CleanSense Lite — LEAN hackathon plan (supersedes task detail where they conflict)
 Principle: build the thinnest thing that is **safe, verified, and demoable**. No production polish. ~10–12 h of software, not 20.
 

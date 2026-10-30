@@ -14,6 +14,10 @@ echo "== firmware safety limits (host build) =="
 OUT="$(mktemp -d)"
 g++ -std=c++17 -Wall -Wextra -Werror -I firmware/cleansense_a firmware/tests/test_limits.cpp -o "$OUT/test_limits"
 "$OUT/test_limits"
+echo "== servo geometry: real sketch sweeps 0 -> 90 -> 0, never outside (host build) =="
+g++ -std=gnu++17 -Wall -Wextra -Werror -Wno-error=unused-parameter -I firmware/host_arduino/shim -I firmware/host_arduino/third_party -I firmware/cleansense_a \
+    firmware/tests/test_geometry.cpp -o "$OUT/test_geometry" -lpthread
+"$OUT/test_geometry"
 echo "== piezo impact features for ESP32 B (host build) =="
 g++ -std=c++17 -Wall -Wextra -Werror -I firmware/cleansense_b firmware/tests/test_piezo_features.cpp -o "$OUT/test_piezo"
 "$OUT/test_piezo"

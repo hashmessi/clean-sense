@@ -1,3 +1,5 @@
+> Historical design document. Current plan: no load cell (camera-estimated weight, ADR-003), servo on GPIO13 (ADR-005), no ESP32 B. See CHECKLIST.md and HARDWARE_RUNBOOK.md.
+
 # CleanSense Lite — PROJECT.md (locked 2026-10-29)
 
 PS4 "CleanSense AI". Rule of the build: **cut, measure, claim less.**
